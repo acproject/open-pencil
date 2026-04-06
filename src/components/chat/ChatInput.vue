@@ -32,9 +32,7 @@ const acpAgentName = computed(() => {
   const agentId = providerID.value.replace('acp:', '')
   return ACP_AGENTS.find((a) => a.id === agentId)?.name ?? agentId
 })
-const isCustomProvider = computed(
-  () => providerID.value === 'openai-compatible' || providerID.value === 'anthropic-compatible'
-)
+const isCustomProvider = computed(() => providerDef.value.supportsCustomModel === true)
 
 const selectedModelName = computed(() => {
   if (isCustomProvider.value) return customModelID.value || 'No model'

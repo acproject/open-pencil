@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import ProviderSelectField from '@/components/chat/ProviderSelectField.vue'
 import { uiInput } from '@/components/ui/input'
@@ -20,17 +20,31 @@ const acpAgent = computed(() => {
 const keyInput = ref('')
 const baseURLInput = ref(customBaseURL.value)
 const customModelInput = ref(customModelID.value)
+const requiresAPIKey = computed(() => providerDef.value.requiresApiKey !== false)
+const canSave = computed(() => {
+  if (providerDef.value.supportsCustomBaseURL && !baseURLInput.value.trim()) return false
+  if (providerDef.value.supportsCustomModel && !customModelInput.value.trim()) return false
+  if (requiresAPIKey.value && !keyInput.value.trim()) return false
+  return true
+})
+
+watch(providerID, () => {
+  keyInput.value = ''
+  baseURLInput.value = customBaseURL.value
+  customModelInput.value = customModelID.value
+})
 
 function save() {
-  const key = keyInput.value.trim()
-  if (!key) return
+  if (!canSave.value) return
   if (providerDef.value.supportsCustomBaseURL) {
     customBaseURL.value = baseURLInput.value.trim()
   }
   if (providerDef.value.supportsCustomModel) {
     customModelID.value = customModelInput.value.trim()
   }
-  setAPIKey(key)
+  if (keyInput.value.trim()) {
+    setAPIKey(keyInput.value.trim())
+  }
   keyInput.value = ''
 }
 </script>
@@ -75,7 +89,7 @@ function save() {
         type="submit"
         data-test-id="api-key-save"
         class="mt-1 w-full rounded bg-accent py-1.5 text-xs font-medium text-white hover:bg-accent/90"
-        :disabled="!keyInput.trim()"
+        :disabled="!canSave"
       >
         {{ dialogs.connect }}
       </button>

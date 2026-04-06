@@ -67,13 +67,15 @@ const providerDef = computed(
 )
 
 const isACPProvider = computed(() => providerID.value.startsWith('acp:'))
+const requiresAPIKey = computed(() => providerDef.value.requiresApiKey !== false)
+const needsCustomModel = computed(() => providerDef.value.supportsCustomModel === true)
+const needsBaseURL = computed(() => providerDef.value.supportsCustomBaseURL === true)
 
 const isConfigured = computed(() => {
   if (isACPProvider.value) return IS_TAURI
-  if (!apiKey.value) return false
-  const needsBaseURL =
-    providerID.value === 'openai-compatible' || providerID.value === 'anthropic-compatible'
-  if (needsBaseURL && !customBaseURL.value) return false
+  if (requiresAPIKey.value && !apiKey.value.trim()) return false
+  if (needsBaseURL.value && !customBaseURL.value.trim()) return false
+  if (needsCustomModel.value && !customModelID.value.trim()) return false
   return true
 })
 
@@ -108,8 +110,14 @@ watch(providerID, (id) => {
   if (def?.defaultModel) {
     modelID.value = def.defaultModel
   }
+  if (def?.supportsCustomBaseURL && def.defaultBaseURL && !customBaseURL.value.trim()) {
+    customBaseURL.value = def.defaultBaseURL
+  }
+  if (def?.supportsCustomModel && def.defaultCustomModel && !customModelID.value.trim()) {
+    customModelID.value = def.defaultCustomModel
+  }
   markTransportDirty()
-})
+}, { immediate: true })
 
 watch(modelID, markTransportDirty)
 watch(customModelID, markTransportDirty)
@@ -122,10 +130,8 @@ function setAPIKey(key: string) {
 }
 
 function createModel(): LanguageModel {
-  const key = apiKey.value
-  const needsCustomModel =
-    providerID.value === 'openai-compatible' || providerID.value === 'anthropic-compatible'
-  const effectiveModelID = needsCustomModel ? customModelID.value : modelID.value
+  const key = apiKey.value.trim()
+  const effectiveModelID = needsCustomModel.value ? customModelID.value.trim() : modelID.value
 
   switch (providerID.value) {
     case 'openrouter': {
@@ -164,10 +170,17 @@ function createModel(): LanguageModel {
       })
       return minimax.chat(effectiveModelID)
     }
+    case 'local': {
+      const local = createOpenAI({
+        apiKey: key || 'local',
+        baseURL: customBaseURL.value.trim()
+      })
+      return local.chat(effectiveModelID)
+    }
     case 'openai-compatible': {
       const custom = createOpenAI({
         apiKey: key,
-        baseURL: customBaseURL.value
+        baseURL: customBaseURL.value.trim()
       })
       return customAPIType.value === 'responses'
         ? custom.responses(effectiveModelID)
@@ -176,7 +189,7 @@ function createModel(): LanguageModel {
     case 'anthropic-compatible': {
       const custom = createAnthropic({
         apiKey: key,
-        baseURL: customBaseURL.value
+        baseURL: customBaseURL.value.trim()
       })
       return custom(effectiveModelID)
     }

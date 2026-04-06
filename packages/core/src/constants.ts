@@ -111,6 +111,7 @@ export type AIProviderID =
   | 'anthropic'
   | 'openai'
   | 'google'
+  | 'local'
   | 'openai-compatible'
   | 'zai'
   | 'minimax'
@@ -130,8 +131,11 @@ export interface AIProviderDef {
   keyURL: string
   models: ModelOption[]
   defaultModel: string
+  requiresApiKey?: boolean
   supportsCustomBaseURL?: boolean
   supportsCustomModel?: boolean
+  defaultBaseURL?: string
+  defaultCustomModel?: string
 }
 
 export const AI_PROVIDERS: AIProviderDef[] = [
@@ -192,6 +196,18 @@ export const AI_PROVIDERS: AIProviderDef[] = [
       { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', tag: '1M context' },
       { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', tag: 'Fast' }
     ]
+  },
+  {
+    id: 'local',
+    name: 'Local model',
+    keyPlaceholder: 'Optional — for secured local endpoints',
+    keyURL: '',
+    defaultModel: '',
+    models: [],
+    requiresApiKey: false,
+    supportsCustomBaseURL: true,
+    supportsCustomModel: true,
+    defaultBaseURL: 'http://127.0.0.1:11434/v1'
   },
   {
     id: 'zai',

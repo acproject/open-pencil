@@ -199,3 +199,33 @@ test('switching tabs preserves chat', async () => {
   await chatTab().click()
   await expect(page.getByText('Hello there', { exact: true })).toBeVisible()
 })
+
+test('local provider can be configured without API key', async () => {
+  await page.evaluate(() => {
+    localStorage.removeItem('open-pencil:ai-key:openrouter')
+    localStorage.removeItem('open-pencil:ai-key:local')
+    localStorage.removeItem('open-pencil:ai-model')
+    localStorage.removeItem('open-pencil:ai-custom-model')
+    localStorage.removeItem('open-pencil:ai-base-url')
+    localStorage.setItem('open-pencil:ai-provider', 'local')
+  })
+  await page.reload()
+  await canvas.waitForInit()
+
+  await chatTab().click()
+
+  const providerSelector = page.locator('[data-test-id="provider-selector"]')
+  await providerSelector.click()
+  await page.getByRole('option', { name: 'Local model' }).click()
+
+  const baseUrlInput = page.locator('[data-test-id="provider-base-url"]')
+  const modelInput = page.locator('[data-test-id="provider-custom-model"]')
+  const connectButton = page.locator('[data-test-id="api-key-save"]')
+
+  await expect(baseUrlInput).toHaveValue('http://127.0.0.1:11434/v1')
+  await modelInput.fill('llama3.2')
+  await expect(connectButton).toBeEnabled()
+  await connectButton.click()
+
+  await expect(chatInput()).toBeVisible()
+})
