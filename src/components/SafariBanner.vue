@@ -4,7 +4,8 @@ import { useLocalStorage } from '@vueuse/core'
 import { IS_BROWSER, IS_TAURI } from '@/constants'
 
 const dismissed = useLocalStorage('safari-banner-dismissed', false)
-const show = !IS_TAURI && IS_BROWSER && !window.showSaveFilePicker
+const isAIIDE = IS_BROWSER && new URLSearchParams(window.location.search).has('embed')
+const show = !IS_TAURI && IS_BROWSER && !isAIIDE && !window.showSaveFilePicker
 </script>
 
 <template>
