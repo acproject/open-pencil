@@ -12,7 +12,8 @@ import { copyFileSync, existsSync, mkdirSync } from 'fs'
 
 import { automationPlugin } from './src/automation/vite-plugin'
 
-const devAutomationAuthToken = randomUUID()
+// Use token from environment if provided by server.ts, otherwise generate one
+const devAutomationAuthToken = process.env.OPENPENCIL_MCP_AUTH_TOKEN || randomUUID()
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST

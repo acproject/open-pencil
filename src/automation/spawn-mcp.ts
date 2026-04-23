@@ -46,12 +46,7 @@ export async function getAutomationAuthToken(): Promise<string | null> {
 }
 
 export async function spawnMCPIfNeeded(): Promise<AutomationServerHandle | null> {
-  if (import.meta.env.DEV || !IS_TAURI) {
-    return DEV_AUTOMATION_AUTH_TOKEN
-      ? { disconnect: noop, authToken: DEV_AUTOMATION_AUTH_TOKEN }
-      : null
-  }
-
+  // Always try to get token from MCP server health endpoint first
   const existing = await readHealth()
   if (existing) {
     runtimeAutomationAuthToken = existing.token ?? null
@@ -61,6 +56,14 @@ export async function spawnMCPIfNeeded(): Promise<AutomationServerHandle | null>
     }
   }
 
+  // DEV mode: MCP server should already be running via Vite plugin
+  if (import.meta.env.DEV || !IS_TAURI) {
+    return DEV_AUTOMATION_AUTH_TOKEN
+      ? { disconnect: noop, authToken: DEV_AUTOMATION_AUTH_TOKEN }
+      : null
+  }
+
+  // Tauri production mode: spawn MCP server via shell plugin
   const authToken = randomHex(32)
   runtimeAutomationAuthToken = authToken
 

@@ -61,9 +61,7 @@ onMounted(async () => {
   try {
     const mcp = await spawnMCPIfNeeded()
     mcpCleanup.value = mcp?.disconnect ?? null
-    if (import.meta.env.DEV || IS_TAURI) {
-      automationCleanup.value = connectAutomation(getActiveStore, mcp?.authToken ?? null).disconnect
-    }
+    automationCleanup.value = connectAutomation(getActiveStore, mcp?.authToken ?? null).disconnect
   } catch (e) {
     console.error(e)
   }
