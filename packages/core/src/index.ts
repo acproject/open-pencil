@@ -340,7 +340,7 @@ export {
   type OpenPencilClipboardData
 } from './clipboard'
 
-export { readPenFile, parsePenFile } from './io/formats/pen'
+export { readPenFile, parsePenFile, buildPenFile } from './io/formats/pen'
 
 export {
   readFigFile,

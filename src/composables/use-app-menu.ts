@@ -39,11 +39,17 @@ export function useAppMenu(mod: string) {
         },
         { label: t.value.open, shortcut: `${mod}O`, action: () => void openFileDialog() },
         { separator: true as const },
-        { label: t.value.save, shortcut: `${mod}S`, action: () => void store.saveFigFile() },
+        { label: t.value.save, shortcut: `${mod}S`, action: () => {
+          console.log('[use-app-menu] save triggered')
+          void store.saveFigFile()
+        } },
         {
           label: t.value.saveAs,
           shortcut: `${mod}⇧S`,
-          action: () => void store.saveFigFileAs()
+          action: () => {
+            console.log('[use-app-menu] save-as triggered')
+            void store.saveFigFileAs()
+          }
         },
         { separator: true as const },
         {

@@ -482,7 +482,10 @@ function fixTextWidths(graph: SceneGraph): void {
 }
 
 export function parsePenFile(json: string): SceneGraph {
+  console.log('[parsePenFile] Starting to parse .pen file')
   const doc: PenDocument = JSON.parse(json)
+  console.log('[parsePenFile] Parsed document, version:', doc.version)
+  console.log('[parsePenFile] Children count:', doc.children?.length ?? 0)
   const graph = new SceneGraph()
 
   for (const page of graph.getPages(true)) {
@@ -494,19 +497,29 @@ export function parsePenFile(json: string): SceneGraph {
   const penSources = new Map<string, PenNode>()
 
   collectComponentIds(doc.children, componentIds)
+  console.log('[parsePenFile] Collected component IDs:', componentIds.size)
 
   const page = graph.addPage(doc.children[0]?.name ?? 'Page 1')
+  console.log('[parsePenFile] Created page:', page.id, page.name)
   for (const child of doc.children) {
-    createSceneNode(child, page.id, graph, ctx, componentIds, penSources)
+    const nodeId = createSceneNode(child, page.id, graph, ctx, componentIds, penSources)
+    console.log('[parsePenFile] Created node:', nodeId, 'from pen node type:', child.type)
   }
 
+  console.log('[parsePenFile] Before applyAllRefProps, nodes count:', Array.from(graph.getAllNodes()).length)
   applyAllRefProps(doc.children, graph, componentIds, penSources, ctx)
   populateInstances(graph)
+  console.log('[parsePenFile] After first populateInstances, nodes count:', Array.from(graph.getAllNodes()).length)
   walkAndApplyOverrides(doc.children, graph, ctx, componentIds, penSources)
   populateInstances(graph)
+  console.log('[parsePenFile] After second populateInstances, nodes count:', Array.from(graph.getAllNodes()).length)
   resolveThemeVariables(doc.children, graph, ctx)
   fixInstanceWidths(graph)
   fixTextWidths(graph)
+
+  console.log('[parsePenFile] Final graph pages:', Array.from(graph.getPages(true)).length)
+  console.log('[parsePenFile] Final graph nodes:', Array.from(graph.getAllNodes()).length)
+  console.log('[parsePenFile] Page child IDs:', page.childIds)
 
   if (graph.getPages(true).length === 0) {
     graph.addPage('Page 1')

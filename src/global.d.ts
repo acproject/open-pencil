@@ -41,4 +41,11 @@ interface Window {
   // The assignment in EditorView.vue is type-safe; test code uses `!` assertion.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   __OPEN_PENCIL_STORE__?: any
+  webkit?: {
+    messageHandlers?: {
+      scriptMessageHandler?: {
+        postMessage(message: string): void
+      }
+    }
+  }
 }

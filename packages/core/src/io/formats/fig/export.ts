@@ -63,7 +63,7 @@ function variableValueToKiwi(
 function collectImageEntries(graph: SceneGraph): Array<{ name: string; data: Uint8Array }> {
   const entries: Array<{ name: string; data: Uint8Array }> = []
   for (const [hash, data] of graph.images) {
-    entries.push({ name: `images/${hash}`, data })
+    entries.push({ name: `images/${hash}`, data: new Uint8Array(data) })
   }
   return entries
 }

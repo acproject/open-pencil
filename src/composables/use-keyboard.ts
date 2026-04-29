@@ -169,7 +169,10 @@ export function useKeyboard() {
   whenever(mod('shift+keye'), () => {
     if (store.state.selectedIds.size > 0) void store.exportSelection(1, 'png')
   })
-  whenever(mod('shift+keys'), () => store.saveFigFileAs())
+  whenever(mod('shift+keys'), () => {
+    console.log('[use-keyboard] shift+keys (save-as) triggered')
+    void store.saveFigFileAs()
+  })
   whenever(mod('shift+keyg'), () => runCommand('selection.ungroup'))
   whenever(mod('shift+keyz'), () => runCommand('edit.redo'))
 
@@ -199,7 +202,10 @@ export function useKeyboard() {
   whenever(mod('digit2'), () => runCommand('view.zoomSelection'))
   whenever(mod('keyd'), () => runCommand('selection.duplicate'))
   whenever(mod('keya'), () => runCommand('selection.selectAll'))
-  whenever(mod('keys'), () => store.saveFigFile())
+  whenever(mod('keys'), () => {
+    console.log('[use-keyboard] keys (save) triggered')
+    void store.saveFigFile()
+  })
   whenever(mod('keyo'), () => openFileDialog())
   whenever(mod('keyg'), () => runCommand('selection.group'))
 

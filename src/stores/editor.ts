@@ -1,7 +1,7 @@
 import { useDebounceFn } from '@vueuse/core'
 import { shallowReactive, shallowRef, computed, watch, triggerRef } from 'vue'
 
-import { IS_TAURI } from '@/constants'
+import { IS_TAURI, IS_BROWSER } from '@/constants'
 import { loadFont } from '@/engine/fonts'
 import { toast } from '@/utils/toast'
 import {
@@ -19,11 +19,13 @@ import {
   mirrorHandle,
   nearestPointOnNetwork,
   readFigFile,
+  readPenFile,
   removeVertex,
   renderNodesToImage,
   SceneGraph,
   splitSegmentAt,
-  prefetchFigmaSchema
+  prefetchFigmaSchema,
+  buildPenFile
 } from '@open-pencil/core'
 
 import type {
@@ -165,7 +167,7 @@ export function createEditorStore(initialGraph?: SceneGraph) {
     if (state.sceneVersion === savedVersion) return
     if (!state.autosaveEnabled) return
     try {
-      await writeFile(await buildFigFile())
+      await writeFile(buildPenFileData())
     } catch (e) {
       console.warn('Autosave failed:', e)
     }
@@ -895,11 +897,130 @@ export function createEditorStore(initialGraph?: SceneGraph) {
     }
   }
 
+  async function openPenFile(file: File, handle?: FileSystemFileHandle, path?: string) {
+    try {
+      state.loading = true
+      await yieldToUI()
+      const imported = await readPenFile(file)
+      await yieldToUI()
+      editor.replaceGraph(imported)
+      editor.undo.clear()
+      state.documentName = file.name.replace(/\.pen$/i, '')
+      setDocumentSource(file.name, 'pen', handle, path)
+      state.selectedIds = new Set()
+      const firstPage = editor.graph.getPages()[0] as SceneNode | undefined
+      const pageId = firstPage?.id ?? editor.graph.rootId
+      await editor.switchPage(pageId)
+      editor.requestRender()
+    } catch (e) {
+      console.error('Failed to open .pen file:', e)
+      toast.show(`Failed to open file: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      state.loading = false
+    }
+  }
+
   function buildFigFile() {
     return exportFigFile(editor.graph, undefined, editor.renderer ?? undefined, state.currentPageId)
   }
 
+  function buildPenFileData() {
+    const json = buildPenFile(editor.graph, state.currentPageId)
+    return new TextEncoder().encode(json)
+  }
+
+  // eslint-disable-next-line complexity -- handles multiple save scenarios
   async function saveFigFile() {
+    console.log('[open-pencil] saveFigFile called, filePath:', filePath, 'fileHandle:', !!fileHandle)
+    const isAIIDE = IS_BROWSER && new URLSearchParams(window.location.search).has('embed')
+    console.log('[open-pencil] saveFigFile isAIIDE:', isAIIDE)
+
+    if (isAIIDE && filePath) {
+      console.log('[open-pencil] Saving to existing path:', filePath)
+      let data: Uint8Array
+      const fileName = filePath.split('/').pop()?.toLowerCase() ?? ''
+      
+      try {
+        if (fileName.endsWith('.pen')) {
+          console.log('[open-pencil] Step 1: Building pen file...')
+          data = buildPenFileData()
+          console.log('[open-pencil] Step 1 complete: data size:', data.length)
+        } else {
+          console.log('[open-pencil] Step 1: Building fig file...')
+          data = await buildFigFile()
+          console.log('[open-pencil] Step 1 complete: data size:', data.length)
+        }
+      } catch (e) {
+        console.error('[open-pencil] Step 1 FAILED:', e)
+        throw e
+      }
+      try {
+        console.log('[open-pencil] Step 2: Writing file...')
+        await writeFile(data)
+        console.log('[open-pencil] Step 2 complete: file written')
+      } catch (e) {
+        console.error('[open-pencil] Step 2 FAILED (writeFile):', e)
+        throw e
+      }
+      return
+    }
+
+    if (isAIIDE) {
+      console.log('[open-pencil] No existing path, calling saveFigFileAs for pen format')
+      const suggestedName = String(state.documentName || 'Untitled') + '.pen'
+      
+      try {
+        console.log('[open-pencil] Sending DESIGN_SAVE_FILE_DIALOG message for pen format...')
+        const dialogMessage = 'DESIGN_SAVE_FILE_DIALOG:' + suggestedName
+        if (window.webkit?.messageHandlers?.scriptMessageHandler) {
+          window.webkit.messageHandlers.scriptMessageHandler.postMessage(dialogMessage)
+          console.log('[open-pencil] DESIGN_SAVE_FILE_DIALOG sent via webkit.messageHandlers')
+        } else {
+          window.parent.postMessage({ type: 'DESIGN_SAVE_FILE_DIALOG', filename: suggestedName }, '*')
+          console.log('[open-pencil] DESIGN_SAVE_FILE_DIALOG sent via postMessage')
+        }
+      } catch (e) {
+        console.error('[open-pencil] Failed to send save dialog request:', e)
+        throw e
+      }
+      
+      console.log('[open-pencil] Waiting for file path from C++...')
+      const selectedPath = await new Promise<string>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          console.error('[open-pencil] Save dialog timeout')
+          reject(new Error('Save dialog timeout'))
+        }, 30000)
+        
+        const handler = (e: MessageEvent) => {
+          console.log('[open-pencil] Received message:', e.data?.type)
+          if (e.data?.type === 'DESIGN_FILE_PATH_SELECTED') {
+            console.log('[open-pencil] File path received:', e.data.filePath)
+            clearTimeout(timeout)
+            window.removeEventListener('message', handler)
+            resolve(e.data.filePath || '')
+          }
+        }
+        
+        window.addEventListener('message', handler)
+      })
+      
+      console.log('[open-pencil] Selected path:', selectedPath)
+      if (!selectedPath) {
+        console.log('[open-pencil] Save cancelled or no path returned')
+        return
+      }
+      
+      filePath = String(selectedPath)
+      fileHandle = null
+      state.documentName = filePath.split('/').pop()?.replace(/\.pen$/i, '') ?? 'Untitled'
+      console.log('[open-pencil] Building pen file data...')
+      const data = buildPenFileData()
+      console.log('[open-pencil] Saving file to:', filePath, 'data size:', data.length)
+      await writeFile(data)
+      void startWatchingFile()
+      return
+    }
+
     if (filePath || fileHandle) {
       await writeFile(await buildFigFile())
     } else if (downloadName) {
@@ -910,7 +1031,66 @@ export function createEditorStore(initialGraph?: SceneGraph) {
   }
 
   async function saveFigFileAs() {
-    const data = await buildFigFile()
+    console.log('[open-pencil] saveFigFileAs called')
+
+    const isAIIDE = IS_BROWSER && new URLSearchParams(window.location.search).has('embed')
+    console.log('[open-pencil] isAIIDE:', isAIIDE, 'URL:', window.location.search)
+    
+    if (isAIIDE) {
+      console.log('[open-pencil] Using AI-IDE save flow')
+      const suggestedName = String(state.documentName || 'Untitled') + '.fig'
+      
+      try {
+        console.log('[open-pencil] Sending DESIGN_SAVE_FILE_DIALOG message...')
+        const dialogMessage = 'DESIGN_SAVE_FILE_DIALOG:' + suggestedName
+        if (window.webkit?.messageHandlers?.scriptMessageHandler) {
+          window.webkit.messageHandlers.scriptMessageHandler.postMessage(dialogMessage)
+          console.log('[open-pencil] DESIGN_SAVE_FILE_DIALOG sent via webkit.messageHandlers')
+        } else {
+          window.parent.postMessage({ type: 'DESIGN_SAVE_FILE_DIALOG', filename: suggestedName }, '*')
+          console.log('[open-pencil] DESIGN_SAVE_FILE_DIALOG sent via postMessage')
+        }
+      } catch (e) {
+        console.error('[open-pencil] Failed to send save dialog request:', e)
+        throw e
+      }
+      
+      console.log('[open-pencil] Waiting for file path from C++...')
+      const selectedPath = await new Promise<string>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          console.error('[open-pencil] Save dialog timeout')
+          reject(new Error('Save dialog timeout'))
+        }, 30000)
+        
+        const handler = (e: MessageEvent) => {
+          console.log('[open-pencil] Received message:', e.data?.type)
+          if (e.data?.type === 'DESIGN_FILE_PATH_SELECTED') {
+            console.log('[open-pencil] File path received:', e.data.filePath)
+            clearTimeout(timeout)
+            window.removeEventListener('message', handler)
+            resolve(e.data.filePath || '')
+          }
+        }
+        
+        window.addEventListener('message', handler)
+      })
+      
+      console.log('[open-pencil] Selected path:', selectedPath)
+      if (!selectedPath) {
+        console.log('[open-pencil] Save cancelled or no path returned')
+        return
+      }
+      
+      filePath = String(selectedPath)
+      fileHandle = null
+      state.documentName = filePath.split('/').pop()?.replace(/\.fig$/i, '') ?? 'Untitled'
+      console.log('[open-pencil] Building fig file data...')
+      const data = await buildFigFile()
+      console.log('[open-pencil] Saving file to:', filePath, 'data size:', data.length)
+      await writeFile(data)
+      void startWatchingFile()
+      return
+    }
 
     if (IS_TAURI) {
       const { save } = await import('@tauri-apps/plugin-dialog')
@@ -926,46 +1106,62 @@ export function createEditorStore(initialGraph?: SceneGraph) {
           .split('/')
           .pop()
           ?.replace(/\.fig$/i, '') ?? 'Untitled'
+      const data = await buildFigFile()
       await writeFile(data)
       void startWatchingFile()
       return
     }
 
-    if (window.showSaveFilePicker) {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: 'Untitled.fig',
-          types: [
-            {
-              description: 'Figma file',
-              accept: { 'application/octet-stream': ['.fig'] }
-            }
-          ]
-        })
-        fileHandle = handle
-        filePath = null
-        state.documentName = handle.name.replace(/\.fig$/i, '')
-        await writeFile(data)
-        void startWatchingFile()
-        return
-      } catch (e) {
-        if ((e as Error).name === 'AbortError') return
-      }
-    }
-
+    // In AI-IDE environment, we should never reach here
+    // But if we do, use prompt as fallback
     const filename = prompt('Save as:', downloadName ?? 'Untitled.fig')
     if (!filename) return
     downloadName = filename
     state.documentName = filename.replace(/\.fig$/i, '')
+    const data = await buildFigFile()
     downloadBlob(new Uint8Array(data), filename, 'application/octet-stream')
   }
 
   async function writeFile(data: Uint8Array) {
+    console.log('[open-pencil] writeFile called, filePath:', filePath, 'fileHandle:', !!fileHandle)
     lastWriteTime = Date.now()
     if (filePath && IS_TAURI) {
       const { writeFile: tauriWrite } = await import('@tauri-apps/plugin-fs')
       await tauriWrite(filePath, data)
       savedVersion = state.sceneVersion
+      return
+    }
+    const isAIIDE = IS_BROWSER && new URLSearchParams(window.location.search).has('embed')
+    console.log('[open-pencil] writeFile isAIIDE:', isAIIDE, 'filePath:', filePath)
+    if (isAIIDE && filePath) {
+      console.log('[open-pencil] writeFile Step A: Converting to base64, data size:', data.length)
+      let base64: string
+      try {
+        const binary = Array.from(new Uint8Array(data)).map(b => String.fromCharCode(b)).join('')
+        base64 = btoa(binary)
+        console.log('[open-pencil] writeFile Step A complete: base64 length:', base64.length)
+      } catch (e) {
+        console.error('[open-pencil] writeFile Step A FAILED (base64 conversion):', e)
+        throw e
+      }
+      const currentFilePath = String(filePath)
+      const message = 'DESIGN_SAVE_FILE_DIRECT:' + currentFilePath + ':' + base64
+      try {
+        if (window.webkit?.messageHandlers?.scriptMessageHandler) {
+          console.log('[open-pencil] writeFile Step B: Using webkit.messageHandlers, message length:', message.length)
+          window.webkit.messageHandlers.scriptMessageHandler.postMessage(message)
+          console.log('[open-pencil] writeFile Step B complete: message sent')
+          savedVersion = state.sceneVersion
+        } else {
+          console.log('[open-pencil] writeFile Step B: webkit.messageHandlers not available, using postMessage')
+          window.parent.postMessage({ type: 'DESIGN_SAVE_FILE_DATA', filePath: currentFilePath, data: base64 }, '*')
+          console.log('[open-pencil] writeFile Step B complete: postMessage sent')
+          savedVersion = state.sceneVersion
+        }
+      } catch (e) {
+        console.error('[open-pencil] writeFile Step B FAILED (send to native):', e)
+        throw e
+      }
       return
     }
     if (fileHandle) {
@@ -986,12 +1182,24 @@ export function createEditorStore(initialGraph?: SceneGraph) {
       const { readFile: tauriRead } = await import('@tauri-apps/plugin-fs')
       const bytes = await tauriRead(filePath)
       const blob = new Blob([bytes])
-      const file = new File([blob], state.documentName + '.fig')
-      const imported = await readFigFile(file)
+      const fileName = filePath.split('/').pop() ?? 'Untitled.fig'
+      const file = new File([blob], fileName)
+      
+      let imported
+      if (fileName.toLowerCase().endsWith('.pen')) {
+        imported = await readPenFile(file)
+      } else {
+        imported = await readFigFile(file)
+      }
       editor.replaceGraph(imported)
     } else if (fileHandle) {
       const file = await fileHandle.getFile()
-      const imported = await readFigFile(file)
+      let imported
+      if (file.name.toLowerCase().endsWith('.pen')) {
+        imported = await readPenFile(file)
+      } else {
+        imported = await readFigFile(file)
+      }
       editor.replaceGraph(imported)
     } else {
       return
@@ -1251,6 +1459,7 @@ export function createEditorStore(initialGraph?: SceneGraph) {
     nodeEditDeleteSelected,
     nodeEditBreakAtVertex,
     openFigFile,
+    openPenFile,
     saveFigFile,
     saveFigFileAs,
     setDocumentSource,
@@ -1294,13 +1503,21 @@ export function setActiveEditorStore(store: EditorStore) {
 }
 
 export function getActiveEditorStore(): EditorStore {
-  if (!storeRef.value) throw new Error('Editor store not provided')
+  if (!storeRef.value) {
+    console.error('[open-pencil] Editor store not provided')
+    throw new Error('Editor store not provided')
+  }
   return storeRef.value
 }
 
 const storeProxy = new Proxy({} as EditorStore, {
   get(_, prop) {
-    return Reflect.get(getActiveEditorStore(), prop)
+    try {
+      return Reflect.get(getActiveEditorStore(), prop)
+    } catch (e) {
+      console.error('[open-pencil] Failed to get property from store:', prop, e)
+      throw e
+    }
   }
 })
 

@@ -76,8 +76,14 @@ const MENU_ACTIONS: Partial<Record<string, () => void>> = {
   close: () => {
     if (activeTab.value) closeTab(activeTab.value.id)
   },
-  save: () => void store.saveFigFile(),
-  'save-as': () => void store.saveFigFileAs(),
+  save: () => {
+    console.log('[use-menu] save action triggered')
+    void store.saveFigFile()
+  },
+  'save-as': () => {
+    console.log('[use-menu] save-as action triggered')
+    void store.saveFigFileAs()
+  },
   duplicate: () => store.duplicateSelected(),
   delete: () => store.deleteSelected(),
   group: () => store.groupSelected(),
