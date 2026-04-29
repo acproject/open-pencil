@@ -167,7 +167,9 @@ export function createEditorStore(initialGraph?: SceneGraph) {
     if (state.sceneVersion === savedVersion) return
     if (!state.autosaveEnabled) return
     try {
-      await writeFile(buildPenFileData())
+      const fileName = filePath?.split('/').pop() ?? ''
+      const data = fileName.toLowerCase().endsWith('.pen') ? buildPenFileData() : await buildFigFile()
+      await writeFile(data)
     } catch (e) {
       console.warn('Autosave failed:', e)
     }
@@ -855,16 +857,16 @@ export function createEditorStore(initialGraph?: SceneGraph) {
 
   function setDocumentSource(
     fileName: string,
-    sourceFormat: string,
+    _sourceFormat: string,
     handle?: FileSystemFileHandle,
     path?: string
   ) {
     stopWatchingFile()
-    fileHandle = sourceFormat === 'fig' ? (handle ?? null) : null
-    filePath = sourceFormat === 'fig' ? (path ?? null) : null
-    downloadName = sourceFormat === 'fig' ? fileName : fileName.replace(/\.[^.]+$/i, '.fig')
+    fileHandle = handle ?? null
+    filePath = path ?? null
+    downloadName = fileName
     savedVersion = state.sceneVersion
-    if (sourceFormat === 'fig' && (fileHandle || filePath)) {
+    if (fileHandle || filePath) {
       void startWatchingFile()
     }
   }
@@ -1022,9 +1024,12 @@ export function createEditorStore(initialGraph?: SceneGraph) {
     }
 
     if (filePath || fileHandle) {
-      await writeFile(await buildFigFile())
+      const fileName = filePath?.split('/').pop() ?? ''
+      const data = fileName.toLowerCase().endsWith('.pen') ? buildPenFileData() : await buildFigFile()
+      await writeFile(data)
     } else if (downloadName) {
-      downloadBlob(new Uint8Array(await buildFigFile()), downloadName, 'application/octet-stream')
+      const data = downloadName.toLowerCase().endsWith('.pen') ? buildPenFileData() : await buildFigFile()
+      downloadBlob(new Uint8Array(data), downloadName, 'application/octet-stream')
     } else {
       await saveFigFileAs()
     }
@@ -1083,10 +1088,9 @@ export function createEditorStore(initialGraph?: SceneGraph) {
       
       filePath = String(selectedPath)
       fileHandle = null
-      state.documentName = filePath.split('/').pop()?.replace(/\.fig$/i, '') ?? 'Untitled'
-      console.log('[open-pencil] Building fig file data...')
-      const data = await buildFigFile()
-      console.log('[open-pencil] Saving file to:', filePath, 'data size:', data.length)
+      const isPen = filePath.toLowerCase().endsWith('.pen')
+      state.documentName = filePath.split('/').pop()?.replace(/\.[^.]+$/i, '') ?? 'Untitled'
+      const data = isPen ? buildPenFileData() : await buildFigFile()
       await writeFile(data)
       void startWatchingFile()
       return
@@ -1096,29 +1100,32 @@ export function createEditorStore(initialGraph?: SceneGraph) {
       const { save } = await import('@tauri-apps/plugin-dialog')
       const path = await save({
         defaultPath: 'Untitled.fig',
-        filters: [{ name: 'Figma file', extensions: ['fig'] }]
+        filters: [
+          { name: 'Figma file', extensions: ['fig'] },
+          { name: 'Pencil file', extensions: ['pen'] }
+        ]
       })
       if (!path) return
       filePath = path
       fileHandle = null
+      const isPen = path.toLowerCase().endsWith('.pen')
       state.documentName =
         path
           .split('/')
           .pop()
-          ?.replace(/\.fig$/i, '') ?? 'Untitled'
-      const data = await buildFigFile()
+          ?.replace(/\.[^.]+$/i, '') ?? 'Untitled'
+      const data = isPen ? buildPenFileData() : await buildFigFile()
       await writeFile(data)
       void startWatchingFile()
       return
     }
 
-    // In AI-IDE environment, we should never reach here
-    // But if we do, use prompt as fallback
     const filename = prompt('Save as:', downloadName ?? 'Untitled.fig')
     if (!filename) return
     downloadName = filename
-    state.documentName = filename.replace(/\.fig$/i, '')
-    const data = await buildFigFile()
+    const isPen = filename.toLowerCase().endsWith('.pen')
+    state.documentName = filename.replace(/\.[^.]+$/i, '')
+    const data = isPen ? buildPenFileData() : await buildFigFile()
     downloadBlob(new Uint8Array(data), filename, 'application/octet-stream')
   }
 
