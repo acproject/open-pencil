@@ -391,4 +391,6 @@ export class FigmaAPI implements NodeProxyHost {
     nodeIds: string[],
     options: { scale?: number; format?: RasterExportFormat; quality?: number }
   ) => Promise<Uint8Array | null>
+
+  saveFile?: (filePath: string, data: Uint8Array) => Promise<void>
 }

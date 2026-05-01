@@ -59,7 +59,8 @@ export async function listFamilies(): Promise<string[]> {
 
 const BUNDLED_FONTS: Record<string, string> = {
   'Inter|Regular': '/Inter-Regular.ttf',
-  'Noto Naskh Arabic|Regular': '/NotoNaskhArabic-Regular.ttf'
+  'Noto Naskh Arabic|Regular': '/NotoNaskhArabic-Regular.ttf',
+  'Noto Sans SC|Regular': '/NotoSansSC-Regular.woff2'
 }
 
 const googleFontsCache = new Map<string, Record<string, string>>()
@@ -315,20 +316,44 @@ function getCJKCandidates(): string[] {
   return CJK_FALLBACK_FAMILIES_LINUX
 }
 
+async function fetchFontFromGoogleCSS(family: string, weight = 400): Promise<ArrayBuffer | null> {
+  try {
+    const cssUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@${weight}&display=swap`
+    const cssRes = await fetch(cssUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+    })
+    if (!cssRes.ok) return null
+    const cssText = await cssRes.text()
+    const urlMatch = cssText.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+)\)/)
+    if (!urlMatch) return null
+    const ttfRes = await fetch(urlMatch[1])
+    if (!ttfRes.ok) return null
+    return await ttfRes.arrayBuffer()
+  } catch {
+    return null
+  }
+}
+
 export async function ensureCJKFallback(): Promise<string[]> {
   if (cjkFallbackFamilies.length > 0) return cjkFallbackFamilies
   if (cjkFallbackPromise) return cjkFallbackPromise
 
   cjkFallbackPromise = (async () => {
-    // Try local system fonts first
-    for (const family of getCJKCandidates()) {
-      const buffer = await findLocalFont(family)
-      if (buffer && registerAndCache(family, 'Regular', buffer)) {
-        cjkFallbackFamilies.push(family)
+    const scData = await loadFont('Noto Sans SC', 'Regular')
+    if (scData && !cjkFallbackFamilies.includes('Noto Sans SC')) {
+      cjkFallbackFamilies.push('Noto Sans SC')
+      console.log('[Fonts] Loaded CJK font from bundled assets: Noto Sans SC')
+    }
+
+    if (cjkFallbackFamilies.length === 0) {
+      for (const family of getCJKCandidates()) {
+        const buffer = await findLocalFont(family)
+        if (buffer && registerAndCache(family, 'Regular', buffer)) {
+          cjkFallbackFamilies.push(family)
+        }
       }
     }
 
-    // Load all CJK Google Fonts in parallel for full coverage
     if (cjkFallbackFamilies.length === 0) {
       const results = await Promise.allSettled(
         CJK_GOOGLE_FONTS.map(async (family) => {
@@ -341,6 +366,28 @@ export async function ensureCJKFallback(): Promise<string[]> {
           cjkFallbackFamilies.push(result.value)
         }
       }
+    }
+
+    if (cjkFallbackFamilies.length === 0) {
+      console.log('[Fonts] CJK fonts not loaded via local or API, trying direct CDN...')
+      const cdnFamilies = ['Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR']
+      for (const family of cdnFamilies) {
+        try {
+          const buffer = await fetchFontFromGoogleCSS(family, 400)
+          if (buffer && registerAndCache(family, 'Regular', buffer)) {
+            console.log(`[Fonts] Loaded CJK font from CDN: ${family}`)
+            cjkFallbackFamilies.push(family)
+          }
+        } catch (e) {
+          console.warn(`[Fonts] Failed to load ${family} from CDN:`, e)
+        }
+      }
+    }
+
+    if (cjkFallbackFamilies.length > 0) {
+      console.log('[Fonts] CJK fallback families:', cjkFallbackFamilies)
+    } else {
+      console.warn('[Fonts] No CJK fallback fonts available — Chinese text may render as boxes')
     }
 
     return cjkFallbackFamilies

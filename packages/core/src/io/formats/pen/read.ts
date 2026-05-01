@@ -20,6 +20,7 @@ import {
   type PenNode,
   type VarContext
 } from '@open-pencil/core/io/formats/pen/convert'
+import { parseFigFile } from '@open-pencil/core/io/formats/fig/read'
 import { parseSVGPath } from '@open-pencil/core/io/formats/svg/parse-path'
 import { SceneGraph } from '@open-pencil/core/scene-graph'
 import { populateInstanceChildren } from '@open-pencil/core/scene-graph-instances'
@@ -483,9 +484,10 @@ function fixTextWidths(graph: SceneGraph): void {
 
 export function parsePenFile(json: string): SceneGraph {
   console.log('[parsePenFile] Starting to parse .pen file')
+  if (json.charCodeAt(0) === 0xfeff) json = json.slice(1)
   const doc: PenDocument = JSON.parse(json)
   console.log('[parsePenFile] Parsed document, version:', doc.version)
-  console.log('[parsePenFile] Children count:', doc.children?.length ?? 0)
+  console.log('[parsePenFile] Children count:', doc.children.length)
   const graph = new SceneGraph()
 
   for (const page of graph.getPages(true)) {
@@ -528,6 +530,122 @@ export function parsePenFile(json: string): SceneGraph {
   return graph
 }
 
+function tryDecodeUtf8(bytes: Uint8Array, start: number): string {
+  const decoder = new TextDecoder('utf-8', { fatal: false })
+  return decoder.decode(bytes.slice(start))
+}
+
+function tryDecodeUtf16LE(bytes: Uint8Array, start: number): string {
+  const decoder = new TextDecoder('utf-16le', { fatal: false })
+  return decoder.decode(bytes.slice(start))
+}
+
+function tryDecodeUtf16BE(bytes: Uint8Array, start: number): string {
+  const decoder = new TextDecoder('utf-16be', { fatal: false })
+  return decoder.decode(bytes.slice(start))
+}
+
+function stripLeadingBomAndJunk(s: string): string {
+  if (s.charCodeAt(0) === 0xfeff) s = s.slice(1)
+  let i = 0
+  while (i < s.length && s.charCodeAt(i) !== 0x7b && s.charCodeAt(i) !== 0x5b) i++
+  if (i > 0) {
+    console.warn('[readPenFile] Stripped', i, 'leading non-JSON characters')
+    s = s.slice(i)
+  }
+  return s
+}
+
+function detectAndDecode(bytes: Uint8Array): string {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    console.log('[readPenFile] Detected UTF-8 BOM')
+    return tryDecodeUtf8(bytes, 3)
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    console.log('[readPenFile] Detected UTF-16 LE BOM')
+    return tryDecodeUtf16LE(bytes, 2)
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    console.log('[readPenFile] Detected UTF-16 BE BOM')
+    return tryDecodeUtf16BE(bytes, 2)
+  }
+  if (bytes.length >= 2 && bytes[0] === 0x00 && bytes[1] !== 0x00) {
+    console.log('[readPenFile] Detected possible UTF-16 BE (no BOM)')
+    return tryDecodeUtf16BE(bytes, 0)
+  }
+  if (bytes.length >= 2 && bytes[1] === 0x00 && bytes[0] !== 0x00) {
+    console.log('[readPenFile] Detected possible UTF-16 LE (no BOM)')
+    return tryDecodeUtf16LE(bytes, 0)
+  }
+  return tryDecodeUtf8(bytes, 0)
+}
+
+async function tryFigFallback(buffer: ArrayBuffer): Promise<SceneGraph | null> {
+  try {
+    return await parseFigFile(buffer.slice(0))
+  } catch {
+    return null
+  }
+}
+
+function looksLikeJson(bytes: Uint8Array): boolean {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return true
+  if (bytes.length >= 2 && ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff))) return true
+  return bytes[0] === 0x7b || bytes[0] === 0x5b
+}
+
 export async function readPenFile(file: File): Promise<SceneGraph> {
-  return parsePenFile(await file.text())
+  const buffer = await file.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+
+  if (buffer.byteLength === 0) {
+    throw new Error('File is empty: ' + file.name)
+  }
+
+  if (!looksLikeJson(bytes)) {
+    console.warn('[readPenFile] File does not start with JSON or BOM bytes, trying fig format')
+    const figResult = await tryFigFallback(buffer)
+    if (figResult) return figResult
+  }
+
+  const hexPreview = Array.from(bytes.slice(0, Math.min(20, bytes.length)))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join(' ')
+  console.log('[readPenFile] File:', file.name, 'size:', file.size, 'type:', file.type, 'bufferSize:', buffer.byteLength, 'firstBytes:', hexPreview)
+
+  let json = detectAndDecode(bytes)
+
+  if (json.charCodeAt(0) === 0xfffd) {
+    console.warn('[readPenFile] UTF-8 decode produced replacement character, trying fig format fallback')
+    const figResult = await tryFigFallback(buffer)
+    if (figResult) return figResult
+    try {
+      json = await file.text()
+    } catch (textErr) {
+      console.warn('[readPenFile] file.text() also failed:', textErr)
+    }
+  }
+
+  json = stripLeadingBomAndJunk(json)
+
+  console.log('[readPenFile] Final json length:', json.length, 'first char code:', json.charCodeAt(0), 'first 80 chars:', json.substring(0, 80))
+
+  try {
+    return parsePenFile(json)
+  } catch (parseError) {
+    console.error('[readPenFile] parsePenFile failed, attempting fig format fallback')
+    const figResult = await tryFigFallback(buffer)
+    if (figResult) return figResult
+    try {
+      const textContent = await file.text()
+      const cleaned = stripLeadingBomAndJunk(textContent)
+      if (cleaned !== json) {
+        console.log('[readPenFile] file.text() produced different content, retrying parse')
+        return parsePenFile(cleaned)
+      }
+    } catch (fallbackErr) {
+      console.warn('[readPenFile] file.text() fallback also failed:', fallbackErr)
+    }
+    throw parseError
+  }
 }

@@ -50,6 +50,7 @@ export function useCanvas(
   let dirty = true
   let lastRenderVersion = -1
   let lastSelectedIds: Set<string> | null = null
+  let lastStateRef: object | null = null
 
   async function init() {
     const canvas = canvasRef.value
@@ -145,6 +146,16 @@ export function useCanvas(
 
   const { pause } = useRafFn(() => {
     if (editor.state.loading) return
+
+    const currentStateRef = editor.state
+    if (currentStateRef !== lastStateRef) {
+      lastStateRef = currentStateRef
+      if (ck && renderer && !editor.renderer) {
+        editor.setCanvasKit(ck, renderer)
+      }
+      dirty = true
+    }
+
     const versionChanged = editor.state.renderVersion !== lastRenderVersion
     const selectionChanged = editor.state.selectedIds !== lastSelectedIds
     if (dirty || versionChanged || selectionChanged) {

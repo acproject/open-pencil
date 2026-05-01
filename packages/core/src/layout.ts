@@ -27,16 +27,50 @@ export type TextMeasurer = (
 let globalTextMeasurer: TextMeasurer | null = null
 
 const GLYPH_WIDTH_FACTOR = 0.6
+const CJK_GLYPH_WIDTH_FACTOR = 1.0
 
-// Rough estimate for text size when CanvasKit/font is not available.
-// DO NOT REMOVE: without this, text nodes keep their 100×100 default size
-// and blow up every HUG container. The real MeasureFunc (CanvasKit) overrides
-// this when available — this is only the fallback.
+const CJK_RANGES = [
+  [0x4e00, 0x9fff],
+  [0x3400, 0x4dbf],
+  [0xf900, 0xfaff],
+  [0x3000, 0x303f],
+  [0x3040, 0x309f],
+  [0x30a0, 0x30ff],
+  [0xac00, 0xd7af],
+  [0xff00, 0xffef],
+  [0x2e80, 0x2eff],
+  [0x2f00, 0x2fdf],
+  [0x3000, 0x303f],
+  [0x31c0, 0x31ef],
+  [0x3200, 0x32ff],
+  [0x3300, 0x33ff],
+  [0xfe30, 0xfe4f],
+  [0xfe50, 0xfe6f],
+  [0x20000, 0x2a6df],
+  [0x2a700, 0x2b73f],
+  [0x2b740, 0x2b81f],
+  [0x2b820, 0x2ceaf]
+]
+
+function isCJKCodePoint(cp: number): boolean {
+  for (const [lo, hi] of CJK_RANGES) {
+    if (cp >= lo && cp <= hi) return true
+  }
+  return false
+}
+
 function estimateTextSize(node: SceneNode, maxWidth?: number): { width: number; height: number } {
   const fontSize = node.fontSize || 14
   const text = node.text || ''
-  const charWidth = fontSize * GLYPH_WIDTH_FACTOR
-  const singleLineWidth = Math.ceil(text.length * charWidth)
+  let totalWidth = 0
+  for (let i = 0; i < text.length; i++) {
+    const cp = text.codePointAt(i) ?? 0
+    if (cp > 0xffff) i++
+    totalWidth += isCJKCodePoint(cp)
+      ? fontSize * CJK_GLYPH_WIDTH_FACTOR
+      : fontSize * GLYPH_WIDTH_FACTOR
+  }
+  const singleLineWidth = Math.ceil(totalWidth)
   const lineH = (node.lineHeight ?? 0) > 0 ? (node.lineHeight as number) : Math.ceil(fontSize * 1.4)
 
   if (maxWidth && maxWidth > 0 && singleLineWidth > maxWidth) {

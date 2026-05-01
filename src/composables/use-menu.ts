@@ -15,9 +15,35 @@ if (IS_BROWSER) {
   ;(
     window as Window & { __OPEN_PENCIL_OPEN_FILE__?: (path: string) => Promise<void> }
   ).__OPEN_PENCIL_OPEN_FILE__ = async (path: string) => {
+    const name = path.split('/').pop() ?? 'file.pen'
+    const isPen = name.toLowerCase().endsWith('.pen')
+
+    if (path.startsWith('/') || path.match(/^[A-Za-z]:\\/)) {
+      const response = await fetch('http://localhost:3300/files/read?path=' + encodeURIComponent(path))
+      const data = await response.json()
+      if (data.content !== undefined) {
+        const encoding = data.encoding ?? (isPen ? 'utf-8' : 'base64')
+        if (encoding === 'base64') {
+          const binaryStr = atob(data.content)
+          const bytes = new Uint8Array(binaryStr.length)
+          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+          const file = new File([bytes], name, { type: 'application/octet-stream' })
+          await openFileInNewTab(file, undefined, path)
+        } else {
+          const encoder = new TextEncoder()
+          const bytes = encoder.encode(data.content)
+          const file = new File([bytes], name, { type: 'application/json' })
+          await openFileInNewTab(file, undefined, path)
+        }
+      } else if (data.error) {
+        console.error('[__OPEN_PENCIL_OPEN_FILE__] Server error:', data.error)
+        throw new Error(data.error)
+      }
+      return
+    }
+
     const response = await fetch(path)
     const blob = await response.blob()
-    const name = path.split('/').pop() ?? 'file.fig'
     const file = new File([blob], name, { type: 'application/octet-stream' })
     await openFileInNewTab(file, undefined, path)
   }

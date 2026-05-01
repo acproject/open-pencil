@@ -1,5 +1,5 @@
 import { CANVAS_BG_COLOR } from '../constants'
-import { collectFontKeys } from '../fonts'
+import { collectFontKeys, ensureCJKFallback, ensureArabicFallback } from '../fonts'
 import { computeAllLayouts } from '../layout'
 
 import type { Color } from '../types'
@@ -50,9 +50,8 @@ export function createPageActions(ctx: EditorContext) {
     if (toLoad.length > 0) {
       await Promise.all(toLoad.map(([family, style]) => ctx.loadFont(family, style)))
     }
-    if (ctx.getRenderer()) {
-      computeAllLayouts(ctx.graph, pageId)
-    }
+    await Promise.all([ensureCJKFallback(), ensureArabicFallback()])
+    computeAllLayouts(ctx.graph, pageId)
     ctx.requestRender()
   }
 

@@ -258,11 +258,17 @@ export const viewportZoomToFit = defineTool({
 
 export const exportSvg = defineTool({
   name: 'export_svg',
-  description: 'Export nodes as SVG markup. Returns the SVG string.',
+  description:
+    'Export nodes as SVG markup. Returns the SVG string. Optionally save to a file path.',
   params: {
     ids: {
       type: 'string[]',
       description: 'Node IDs to export. Omit to export all top-level nodes on the current page.'
+    },
+    save_path: {
+      type: 'string',
+      description:
+        'Optional file path to save the SVG file. When provided, the SVG will be saved to this path.'
     }
   },
   execute: async (figma, args) => {
@@ -272,6 +278,11 @@ export const exportSvg = defineTool({
       args.ids && args.ids.length > 0 ? args.ids : figma.currentPage.children.map((n) => n.id)
     const svg = renderNodesToSVG(figma.graph, pageId, ids)
     if (!svg) return { error: 'No visible nodes to export' }
+    if (args.save_path && figma.saveFile) {
+      const encoded = new TextEncoder().encode(svg)
+      await figma.saveFile(args.save_path, encoded)
+      return { svg, savedTo: args.save_path }
+    }
     return { svg }
   }
 })
@@ -279,7 +290,7 @@ export const exportSvg = defineTool({
 export const exportImage = defineTool({
   name: 'export_image',
   description:
-    'Export nodes as a raster image (PNG, JPG, or WEBP). Returns base64-encoded image data. Use to visually verify designs.',
+    'Export nodes as a raster image (PNG, JPG, or WEBP). Returns base64-encoded image data. Use to visually verify designs. Optionally save to a file path.',
   params: {
     ids: {
       type: 'string[]',
@@ -297,6 +308,11 @@ export const exportImage = defineTool({
       default: 1,
       min: 0.1,
       max: 4
+    },
+    save_path: {
+      type: 'string',
+      description:
+        'Optional file path to save the image file. When provided, the image will be saved to this path.'
     }
   },
   execute: async (figma, args) => {
@@ -313,6 +329,15 @@ export const exportImage = defineTool({
     if (!data || data.length === 0) return { error: 'No visible nodes to export' }
     const base64 = uint8ArrayToBase64(data)
     const mimeMap = { PNG: 'image/png', JPG: 'image/jpeg', WEBP: 'image/webp' } as const
+    if (args.save_path && figma.saveFile) {
+      await figma.saveFile(args.save_path, data)
+      return {
+        mimeType: mimeMap[format],
+        base64,
+        byteLength: data.length,
+        savedTo: args.save_path
+      }
+    }
     return {
       mimeType: mimeMap[format],
       base64,

@@ -1364,6 +1364,52 @@ export function createEditorStore(initialGraph?: SceneGraph) {
     ext: string,
     mime: string
   ) {
+    const isAIIDE = IS_BROWSER && new URLSearchParams(window.location.search).has('embed')
+
+    if (isAIIDE) {
+      const binary = Array.from(new Uint8Array(data))
+        .map((b) => String.fromCharCode(b))
+        .join('')
+      const base64 = btoa(binary)
+      const dialogMessage = 'DESIGN_SAVE_FILE_DIALOG:' + fileName
+      if (window.webkit?.messageHandlers?.scriptMessageHandler) {
+        window.webkit.messageHandlers.scriptMessageHandler.postMessage(dialogMessage)
+      } else {
+        window.parent.postMessage(
+          { type: 'DESIGN_SAVE_FILE_DIALOG', filename: fileName },
+          '*'
+        )
+      }
+      await new Promise<void>((resolve) => {
+        const handler = (e: MessageEvent) => {
+          if (e.data?.type === 'DESIGN_FILE_PATH_SELECTED') {
+            window.removeEventListener('message', handler)
+            const selectedPath = e.data.filePath
+            if (!selectedPath) {
+              resolve()
+              return
+            }
+            const saveMessage = 'DESIGN_SAVE_FILE_DIRECT:' + selectedPath + ':' + base64
+            if (window.webkit?.messageHandlers?.scriptMessageHandler) {
+              window.webkit.messageHandlers.scriptMessageHandler.postMessage(saveMessage)
+            } else {
+              window.parent.postMessage(
+                { type: 'DESIGN_SAVE_FILE_DATA', filePath: selectedPath, data: base64 },
+                '*'
+              )
+            }
+            resolve()
+          }
+        }
+        window.addEventListener('message', handler)
+        setTimeout(() => {
+          window.removeEventListener('message', handler)
+          resolve()
+        }, 60000)
+      })
+      return
+    }
+
     if (IS_TAURI) {
       const { save } = await import('@tauri-apps/plugin-dialog')
       const path = await save({
