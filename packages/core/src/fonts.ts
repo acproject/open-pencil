@@ -63,7 +63,8 @@ export async function listFamilies(): Promise<string[]> {
 const BUNDLED_FONTS: Record<string, string> = {
   'Inter|Regular': '/Inter-Regular.ttf',
   'Noto Naskh Arabic|Regular': '/NotoNaskhArabic-Regular.ttf',
-  'Noto Sans SC|Regular': '/NotoSansSC-Regular.ttf'
+  'Noto Sans SC|Regular': '/NotoSansSC-Regular.ttf',
+  'Noto Emoji|Regular': '/NotoEmoji-Regular.ttf'
 }
 
 const googleFontsCache = new Map<string, Record<string, string>>()
@@ -185,6 +186,16 @@ export async function loadFont(family: string, style = 'Regular'): Promise<Array
     return cached
   }
 
+  const bundledUrl = BUNDLED_FONTS[cacheKey]
+  if (bundledUrl) {
+    try {
+      const buffer = await fetchBundledFont(bundledUrl)
+      if (buffer && !isVariableFont(buffer)) return registerAndCache(family, style, buffer)
+    } catch (e) {
+      console.warn(`Bundled font load failed for "${family}" ${style}:`, e)
+    }
+  }
+
   const localBuffer = await findLocalFont(family, style)
   if (localBuffer) return registerAndCache(family, style, localBuffer)
 
@@ -194,16 +205,6 @@ export async function loadFont(family: string, style = 'Regular'): Promise<Array
       if (buffer) return registerAndCache(family, style, buffer)
     } catch (e) {
       console.warn(`Google Fonts fetch failed for "${family}" ${style}:`, e)
-    }
-  }
-
-  const bundledUrl = BUNDLED_FONTS[cacheKey]
-  if (bundledUrl) {
-    try {
-      const buffer = await fetchBundledFont(bundledUrl)
-      if (buffer && !isVariableFont(buffer)) return registerAndCache(family, style, buffer)
-    } catch (e) {
-      console.warn(`Bundled font load failed for "${family}" ${style}:`, e)
     }
   }
 
@@ -246,7 +247,7 @@ function registerFontInBrowser(family: string, style: string, data: ArrayBuffer)
   })
   face
     .load()
-    .then(() => document.fonts.add(face))
+    .then(() => (document.fonts as unknown as { add: (f: FontFace) => void }).add(face))
     .catch(() => {
       console.warn(`Failed to load font "${family}" (${style})`)
     })
@@ -333,7 +334,7 @@ async function fetchFontFromGoogleCSS(family: string, weight = 400): Promise<Arr
   try {
     const cssUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@${weight}&display=swap`
     const cssRes = await fetch(cssUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+      headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko)' }
     })
     if (!cssRes.ok) return null
     const cssText = await cssRes.text()
@@ -495,24 +496,32 @@ export async function ensureEmojiFallback(): Promise<string[]> {
   if (emojiFallbackPromise) return emojiFallbackPromise
 
   emojiFallbackPromise = (async () => {
-    for (const family of getEmojiCandidates()) {
-      const buffer = await findLocalFont(family)
-      if (buffer && registerAndCache(family, 'Regular', buffer)) {
-        emojiFallbackFamilies.push(family)
-        console.log('[Fonts] Loaded local emoji font:', family)
+    const bundledBuffer = await loadFont('Noto Emoji', 'Regular')
+    if (bundledBuffer) {
+      emojiFallbackFamilies.push('Noto Emoji')
+      console.log('[Fonts] Loaded bundled emoji font: Noto Emoji')
+    }
+
+    if (emojiFallbackFamilies.length === 0) {
+      for (const family of getEmojiCandidates()) {
+        const buffer = await findLocalFont(family)
+        if (buffer && registerAndCache(family, 'Regular', buffer)) {
+          emojiFallbackFamilies.push(family)
+          console.log('[Fonts] Loaded local emoji font:', family)
+        }
       }
     }
 
     if (emojiFallbackFamilies.length === 0) {
       console.log('[Fonts] No local emoji fonts, trying Google Fonts CDN...')
       try {
-        const buffer = await fetchFontFromGoogleCSS('Noto Color Emoji', 400)
-        if (buffer && !isVariableFont(buffer) && registerAndCache('Noto Color Emoji', 'Regular', buffer)) {
-          emojiFallbackFamilies.push('Noto Color Emoji')
-          console.log('[Fonts] Loaded emoji font from CDN: Noto Color Emoji')
+        const buffer = await fetchFontFromGoogleCSS('Noto Emoji', 400)
+        if (buffer && registerAndCache('Noto Emoji', 'Regular', buffer)) {
+          emojiFallbackFamilies.push('Noto Emoji')
+          console.log('[Fonts] Loaded emoji font from CDN: Noto Emoji')
         }
       } catch (e) {
-        console.warn('[Fonts] Failed to load Noto Color Emoji from CDN:', e)
+        console.warn('[Fonts] Failed to load Noto Emoji from CDN:', e)
       }
     }
 
