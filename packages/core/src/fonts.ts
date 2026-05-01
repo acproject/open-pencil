@@ -5,6 +5,9 @@ import {
   CJK_FALLBACK_FAMILIES_WINDOWS,
   CJK_FALLBACK_FAMILIES_LINUX,
   CJK_GOOGLE_FONTS,
+  EMOJI_FALLBACK_FAMILIES_MACOS,
+  EMOJI_FALLBACK_FAMILIES_WINDOWS,
+  EMOJI_FALLBACK_FAMILIES_LINUX,
   GOOGLE_FONTS_API_KEY
 } from './constants'
 
@@ -307,6 +310,8 @@ const cjkFallbackFamilies: string[] = []
 let cjkFallbackPromise: Promise<string[]> | null = null
 const arabicFallbackFamilies: string[] = []
 let arabicFallbackPromise: Promise<string[]> | null = null
+const emojiFallbackFamilies: string[] = []
+let emojiFallbackPromise: Promise<string[]> | null = null
 
 function getCJKCandidates(): string[] {
   if (typeof navigator === 'undefined') return [...CJK_FALLBACK_FAMILIES_LINUX]
@@ -314,6 +319,14 @@ function getCJKCandidates(): string[] {
   if (ua.includes('Mac')) return CJK_FALLBACK_FAMILIES_MACOS
   if (ua.includes('Windows')) return CJK_FALLBACK_FAMILIES_WINDOWS
   return CJK_FALLBACK_FAMILIES_LINUX
+}
+
+function getEmojiCandidates(): string[] {
+  if (typeof navigator === 'undefined') return [...EMOJI_FALLBACK_FAMILIES_LINUX]
+  const ua = navigator.userAgent
+  if (ua.includes('Mac')) return EMOJI_FALLBACK_FAMILIES_MACOS
+  if (ua.includes('Windows')) return EMOJI_FALLBACK_FAMILIES_WINDOWS
+  return EMOJI_FALLBACK_FAMILIES_LINUX
 }
 
 async function fetchFontFromGoogleCSS(family: string, weight = 400): Promise<ArrayBuffer | null> {
@@ -469,6 +482,59 @@ export function getArabicFallbackFamilies(): string[] {
 export function setArabicFallbackFamily(family: string): void {
   if (!arabicFallbackFamilies.includes(family)) {
     arabicFallbackFamilies.push(family)
+  }
+}
+
+export async function ensureEmojiFallback(): Promise<string[]> {
+  if (emojiFallbackFamilies.length > 0) {
+    for (const family of emojiFallbackFamilies) {
+      await loadFont(family, 'Regular')
+    }
+    return emojiFallbackFamilies
+  }
+  if (emojiFallbackPromise) return emojiFallbackPromise
+
+  emojiFallbackPromise = (async () => {
+    for (const family of getEmojiCandidates()) {
+      const buffer = await findLocalFont(family)
+      if (buffer && registerAndCache(family, 'Regular', buffer)) {
+        emojiFallbackFamilies.push(family)
+        console.log('[Fonts] Loaded local emoji font:', family)
+      }
+    }
+
+    if (emojiFallbackFamilies.length === 0) {
+      console.log('[Fonts] No local emoji fonts, trying Google Fonts CDN...')
+      try {
+        const buffer = await fetchFontFromGoogleCSS('Noto Color Emoji', 400)
+        if (buffer && !isVariableFont(buffer) && registerAndCache('Noto Color Emoji', 'Regular', buffer)) {
+          emojiFallbackFamilies.push('Noto Color Emoji')
+          console.log('[Fonts] Loaded emoji font from CDN: Noto Color Emoji')
+        }
+      } catch (e) {
+        console.warn('[Fonts] Failed to load Noto Color Emoji from CDN:', e)
+      }
+    }
+
+    if (emojiFallbackFamilies.length > 0) {
+      console.log('[Fonts] Emoji fallback families:', emojiFallbackFamilies)
+    } else {
+      console.warn('[Fonts] No emoji fallback fonts available — emoji may render as boxes')
+    }
+
+    return emojiFallbackFamilies
+  })()
+
+  return emojiFallbackPromise
+}
+
+export function getEmojiFallbackFamilies(): string[] {
+  return emojiFallbackFamilies
+}
+
+export function setEmojiFallbackFamily(family: string): void {
+  if (!emojiFallbackFamilies.includes(family)) {
+    emojiFallbackFamilies.push(family)
   }
 }
 

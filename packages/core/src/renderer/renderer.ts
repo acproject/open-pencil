@@ -434,7 +434,7 @@ export class SkiaRenderer {
     console.log('[Renderer] loadFonts() called')
     this.fontProvider = this.ck.TypefaceFontProvider.Make()
 
-    const { initFontService, loadFont, ensureArabicFallback, ensureCJKFallback } =
+    const { initFontService, loadFont, ensureArabicFallback, ensureCJKFallback, ensureEmojiFallback } =
       await import('../fonts')
     initFontService(this.ck, this.fontProvider)
 
@@ -469,7 +469,10 @@ export class SkiaRenderer {
     console.log('[Renderer] Awaiting ensureArabicFallback()')
     const arabicFamilies = await ensureArabicFallback()
     console.log('[Renderer] Arabic fallback resolved:', arabicFamilies)
-    if (cjkFamilies.length > 0 || arabicFamilies.length > 0) {
+    console.log('[Renderer] Awaiting ensureEmojiFallback()')
+    const emojiFamilies = await ensureEmojiFallback()
+    console.log('[Renderer] Emoji fallback resolved:', emojiFamilies)
+    if (cjkFamilies.length > 0 || arabicFamilies.length > 0 || emojiFamilies.length > 0) {
       this.invalidateAllPictures()
     }
   }

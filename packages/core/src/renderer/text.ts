@@ -1,7 +1,7 @@
 import { resolveRGBAForPreview } from '../color-management'
 import { DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE } from '../constants'
 import { resolveNodeTextDirection } from '../direction'
-import { getArabicFallbackFamilies, getCJKFallbackFamilies, isFontLoaded } from '../fonts'
+import { getArabicFallbackFamilies, getCJKFallbackFamilies, getEmojiFallbackFamilies, isFontLoaded } from '../fonts'
 
 import type { SceneNode } from '../scene-graph'
 import type { CanvasKit, FontWeight, Paragraph, TypefaceFontProvider } from 'canvaskit-wasm'
@@ -174,6 +174,7 @@ export function buildParagraph(
   const baseFontSize = node.fontSize || DEFAULT_FONT_SIZE
   const cjkFallbacks = getCJKFallbackFamilies()
   const arabicFallbacks = getArabicFallbackFamilies()
+  const emojiFallbacks = getEmojiFallbackFamilies()
   const textDirection = resolveNodeTextDirection(node)
 
   const truncateOpts = buildTruncateOpts(node, baseFontSize)
@@ -183,6 +184,7 @@ export function buildParagraph(
     if (primary !== DEFAULT_FONT_FAMILY) families.push(DEFAULT_FONT_FAMILY)
     families.push(...arabicFallbacks)
     families.push(...cjkFallbacks)
+    families.push(...emojiFallbacks)
     return [...new Set(families)]
   }
 

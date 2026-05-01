@@ -302,6 +302,12 @@ export const CJK_FALLBACK_FAMILIES_LINUX = [
 
 export const CJK_GOOGLE_FONTS = ['Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR']
 
+export const EMOJI_FALLBACK_FAMILIES_MACOS = ['Apple Color Emoji']
+
+export const EMOJI_FALLBACK_FAMILIES_WINDOWS = ['Segoe UI Emoji', 'Segoe UI Symbol']
+
+export const EMOJI_FALLBACK_FAMILIES_LINUX = ['Noto Color Emoji', 'Emoji One']
+
 export const DEFAULT_SHAPE_FILL: Fill = {
   type: 'SOLID',
   color: { r: 0.83, g: 0.83, b: 0.83, a: 1 },
