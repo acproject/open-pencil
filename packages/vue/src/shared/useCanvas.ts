@@ -56,13 +56,23 @@ export function useCanvas(
     const canvas = canvasRef.value
     if (!canvas || destroyed) return
 
+    console.log('[useCanvas] init() starting')
     ck = await getCanvasKit()
     if (destroyed) return
 
+    console.log('[useCanvas] CanvasKit loaded, creating surface')
     await new Promise((r) => requestAnimationFrame(r))
     createSurface(canvas)
-    await renderer?.loadFonts()
+    console.log('[useCanvas] Surface created, renderer:', renderer ? 'exists' : 'null')
+    if (renderer) {
+      console.log('[useCanvas] Calling renderer.loadFonts()')
+      await renderer.loadFonts()
+      console.log('[useCanvas] loadFonts() completed, fontsLoaded:', renderer.fontsLoaded)
+    } else {
+      console.error('[useCanvas] renderer is null, cannot load fonts')
+    }
     if (!destroyed) renderNow()
+    console.log('[useCanvas] init() completed')
   }
 
   function sizeCanvas(canvas: HTMLCanvasElement) {

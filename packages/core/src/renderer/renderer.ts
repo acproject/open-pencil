@@ -431,13 +431,16 @@ export class SkiaRenderer {
   }
 
   async loadFonts(): Promise<void> {
+    console.log('[Renderer] loadFonts() called')
     this.fontProvider = this.ck.TypefaceFontProvider.Make()
 
     const { initFontService, loadFont, ensureArabicFallback, ensureCJKFallback } =
       await import('../fonts')
     initFontService(this.ck, this.fontProvider)
 
+    console.log('[Renderer] Loading default font:', DEFAULT_FONT_FAMILY)
     const fontData = await loadFont(DEFAULT_FONT_FAMILY, 'Regular')
+    console.log('[Renderer] Default font data loaded:', fontData ? 'success' : 'failed')
     if (fontData) {
       const typeface = this.ck.Typeface.MakeFreeTypeFaceFromData(fontData)
       if (typeface) {
@@ -452,6 +455,7 @@ export class SkiaRenderer {
         this.sectionTitleFont = new this.ck.Font(typeface, SECTION_TITLE_FONT_SIZE)
         this.componentLabelFont = new this.ck.Font(typeface, COMPONENT_LABEL_FONT_SIZE)
         this.profiler.setTypeface(typeface)
+        console.log('[Renderer] Default font registered in CanvasKit')
       }
       this.fontMgr = this.ck.FontMgr.FromData(fontData) ?? null
     }
@@ -459,12 +463,15 @@ export class SkiaRenderer {
     this.fontsLoaded = true
     this.invalidateAllPictures()
 
-    void ensureCJKFallback().then((families) => {
-      if (families.length > 0) this.invalidateAllPictures()
-    })
-    void ensureArabicFallback().then((families) => {
-      if (families.length > 0) this.invalidateAllPictures()
-    })
+    console.log('[Renderer] Awaiting ensureCJKFallback()')
+    const cjkFamilies = await ensureCJKFallback()
+    console.log('[Renderer] CJK fallback resolved:', cjkFamilies)
+    console.log('[Renderer] Awaiting ensureArabicFallback()')
+    const arabicFamilies = await ensureArabicFallback()
+    console.log('[Renderer] Arabic fallback resolved:', arabicFamilies)
+    if (cjkFamilies.length > 0 || arabicFamilies.length > 0) {
+      this.invalidateAllPictures()
+    }
   }
 
   /**

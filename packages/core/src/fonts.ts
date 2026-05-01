@@ -60,7 +60,7 @@ export async function listFamilies(): Promise<string[]> {
 const BUNDLED_FONTS: Record<string, string> = {
   'Inter|Regular': '/Inter-Regular.ttf',
   'Noto Naskh Arabic|Regular': '/NotoNaskhArabic-Regular.ttf',
-  'Noto Sans SC|Regular': '/NotoSansSC-Regular.woff2'
+  'Noto Sans SC|Regular': '/NotoSansSC-Regular.ttf'
 }
 
 const googleFontsCache = new Map<string, Record<string, string>>()
@@ -335,26 +335,41 @@ async function fetchFontFromGoogleCSS(family: string, weight = 400): Promise<Arr
 }
 
 export async function ensureCJKFallback(): Promise<string[]> {
-  if (cjkFallbackFamilies.length > 0) return cjkFallbackFamilies
-  if (cjkFallbackPromise) return cjkFallbackPromise
+  console.log('[Fonts] ensureCJKFallback() called')
+  if (cjkFallbackFamilies.length > 0) {
+    console.log('[Fonts] CJK fonts already in list, re-registering in current fontProvider:', cjkFallbackFamilies)
+    for (const family of cjkFallbackFamilies) {
+      await loadFont(family, 'Regular')
+    }
+    return cjkFallbackFamilies
+  }
+  if (cjkFallbackPromise) {
+    console.log('[Fonts] CJK fallback already in progress, returning existing promise')
+    return cjkFallbackPromise
+  }
 
   cjkFallbackPromise = (async () => {
+    console.log('[Fonts] Starting CJK font loading process')
     const scData = await loadFont('Noto Sans SC', 'Regular')
+    console.log('[Fonts] Noto Sans SC bundled font result:', scData ? 'loaded' : 'failed')
     if (scData && !cjkFallbackFamilies.includes('Noto Sans SC')) {
       cjkFallbackFamilies.push('Noto Sans SC')
       console.log('[Fonts] Loaded CJK font from bundled assets: Noto Sans SC')
     }
 
     if (cjkFallbackFamilies.length === 0) {
+      console.log('[Fonts] No bundled CJK font, trying local fonts')
       for (const family of getCJKCandidates()) {
         const buffer = await findLocalFont(family)
         if (buffer && registerAndCache(family, 'Regular', buffer)) {
           cjkFallbackFamilies.push(family)
+          console.log('[Fonts] Loaded local CJK font:', family)
         }
       }
     }
 
     if (cjkFallbackFamilies.length === 0) {
+      console.log('[Fonts] No local CJK fonts, trying Google Fonts API')
       const results = await Promise.allSettled(
         CJK_GOOGLE_FONTS.map(async (family) => {
           const data = await loadFont(family, 'Regular')
@@ -364,6 +379,7 @@ export async function ensureCJKFallback(): Promise<string[]> {
       for (const result of results) {
         if (result.status === 'fulfilled' && result.value) {
           cjkFallbackFamilies.push(result.value)
+          console.log('[Fonts] Loaded CJK font from Google Fonts API:', result.value)
         }
       }
     }
@@ -412,7 +428,12 @@ export function setCJKFallbackFamily(family: string): void {
 }
 
 export async function ensureArabicFallback(): Promise<string[]> {
-  if (arabicFallbackFamilies.length > 0) return arabicFallbackFamilies
+  if (arabicFallbackFamilies.length > 0) {
+    for (const family of arabicFallbackFamilies) {
+      await loadFont(family, 'Regular')
+    }
+    return arabicFallbackFamilies
+  }
   if (arabicFallbackPromise) return arabicFallbackPromise
 
   arabicFallbackPromise = (async () => {
